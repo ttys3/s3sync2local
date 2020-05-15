@@ -1,4 +1,4 @@
-module github.com/mazay/s3sync-service
+module github.com/ttys3/s3sync2local
 
 go 1.13
 

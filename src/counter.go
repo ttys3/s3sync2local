@@ -5,34 +5,34 @@ import (
 )
 
 type Counter interface {
-	Count() int64
+	Count() uint64
 	Inc()
-	Add(count int64)
+	Add(count uint64)
 	Clear()
 }
 
 func NewCounter() Counter {
 	return &StandardCounter{
-		count: 0,
+		count: uint64(0),
 	}
 }
 
 type StandardCounter struct {
-	count int64
+	count uint64
 }
 
-func (c *StandardCounter) Count() int64 {
-	return atomic.LoadInt64(&c.count)
+func (c *StandardCounter) Count() uint64 {
+	return atomic.LoadUint64(&c.count)
 }
 
 func (c *StandardCounter) Inc() {
-	atomic.AddInt64(&c.count, 1)
+	atomic.AddUint64(&c.count, 1)
 }
 
-func (c *StandardCounter) Add(count int64) {
-	atomic.AddInt64(&c.count, count)
+func (c *StandardCounter) Add(count uint64) {
+	atomic.AddUint64(&c.count, count)
 }
 
 func (c *StandardCounter) Clear() {
-	atomic.StoreInt64(&c.count, 0)
+	atomic.StoreUint64(&c.count, 0)
 }

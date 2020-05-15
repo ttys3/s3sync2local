@@ -1,12 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -69,25 +69,19 @@ func getS3Service(site Site) *s3.S3 {
 func getAwsS3ItemMap(s3Service *s3.S3, site Site) (map[string]string, error) {
 	var items = make(map[string]string)
 
-	params := &s3.ListObjectsInput{
+	perpage := int64(1024)
+	params := &s3.ListObjectsV2Input{
 		Bucket: aws.String(site.Bucket),
 		Prefix: aws.String(site.BucketPath),
-		MaxKeys: aws.Int64(1024),
+		MaxKeys: aws.Int64(perpage),
 	}
 
 	logger.Infof("[%s] begin list objects ...", site.Name)
 
-	bar := progressbar.Default(1000, "list objects")
+	bar := progressbar.Default(5000, fmt.Sprintf("list objects [%d/page] ...", perpage))
 
-	go func() {
-		for i := 0; i < 800; i++ {
-			bar.Add(1)
-			time.Sleep(100 * time.Millisecond)
-		}
-	}()
-
-	err := s3Service.ListObjectsPages(params,
-		func(page *s3.ListObjectsOutput, last bool) bool {
+	err := s3Service.ListObjectsV2Pages(params,
+		func(page *s3.ListObjectsV2Output, last bool) bool {
 			// Process the objects for each page
 			for _, s3obj := range page.Contents {
 				if aws.StringValue(s3obj.StorageClass) != site.StorageClass {
@@ -152,7 +146,7 @@ func downloadFile(key string, site Site) {
 			errorsMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name, "cloud").Inc()
 			logger.Errorf("failed to download object: b:%s, k:%s => %s, err %v", site.Bucket, key, localpath, err)
 		} else {
-			donwloadSizeCounter.Add(n)
+			donwloadSizeCounter.Add(uint64(n))
 			logger.Debugf("successfully downloaded object to: %s", localpath)
 		}
 	}
@@ -179,11 +173,11 @@ func syncSite(site Site, downloadCh chan<- DownloadCFG, checksumCh chan<- Checks
 		osExit(4)
 	} else {
 		logger.Infof("[%s] begin sync ...", site.Name)
-		bar := progressbar.Default(int64(len(awsItems)), "sync")
+		bar := progressbar.Default(int64(len(awsItems)), "sync...")
 		// Compare S3 objects with local
 		FilePathWalkDir(site, awsItems, s3Service, downloadCh, checksumCh, bar)
 		bar.Finish()
-		logger.Infof("[%s] finished sync. downloaded files: %d, sizes: %s, deleted files: %d",
+		logger.Infof("[%s] finished sync. downloaded local files: %d, downloaded total size: %s, deleted local files: %d",
 			site.Name,
 			donwloadCounter.Count(),
 			humanize.Bytes(uint64(donwloadSizeCounter.Count())),

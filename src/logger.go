@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/sirupsen/logrus"
-	"github.com/snowzach/rotatefilehook"
+	"github.com/ttys3/rotatefilehook"
 )
 
 var logger = logrus.New()
@@ -44,12 +44,13 @@ func initLogger(config *Config) {
 		}
 
 		rotateFileHook, err := rotatefilehook.NewRotateFileHook(rotatefilehook.RotateFileConfig{
-			Filename: "s3-sync.log",
-			MaxSize: 5, // the maximum size in megabytes
+			Filename:   "s3-sync.log",
+			MaxSize:    5, // the maximum size in megabytes
 			MaxBackups: 7, // the maximum number of old log files to retain
-			MaxAge: 7, // the maximum number of days to retain old log files
-			Level: logrus.DebugLevel,
-			Formatter: &logrus.TextFormatter{FullTimestamp: true},
+			MaxAge:     7, // the maximum number of days to retain old log files
+			LocalTime:  true,
+			Level:      logrus.DebugLevel,
+			Formatter:  &logrus.TextFormatter{FullTimestamp: true},
 		})
 		if err != nil {
 			panic(err)

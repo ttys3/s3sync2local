@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -34,17 +33,16 @@ func getObjectSize(s3Service *s3.S3, site Site, s3Key string) int64 {
 	return objSize
 }
 
-func generateS3Key(bucketPath string, localPath string, filePath string) string {
+func generateS3Key(localPath string, filePath string) string {
 	relativePath, _ := filepath.Rel(localPath, filePath)
 	if runtime.GOOS == "windows" {
 		relativePath = strings.ReplaceAll(relativePath, "\\", "/")
 	}
-	return path.Join(bucketPath, relativePath)
+	return relativePath
 }
 
-func generateLocalpath(localPath string, bucketPath string, key string) string {
-	//filepath.Join(site.LocalPath, site.BucketPath, key)
-	return filepath.Join(localPath, bucketPath, key)
+func generateLocalpath(localPath string, key string) string {
+	return filepath.Join(localPath, key)
 }
 
 func getS3Session(site Site) *session.Session {
@@ -73,6 +71,7 @@ func getAwsS3ItemMap(s3Service *s3.S3, site Site) (map[string]string, error) {
 		Prefix: aws.String(site.BucketPath),
 	}
 
+	logger.Infof("begin list objects")
 	err := s3Service.ListObjectsPages(params,
 		func(page *s3.ListObjectsOutput, last bool) bool {
 			// Process the objects for each page
@@ -89,6 +88,7 @@ func getAwsS3ItemMap(s3Service *s3.S3, site Site) (map[string]string, error) {
 			return true
 		},
 	)
+	logger.Infof("done list objects")
 	if err != nil {
 		// Update errors metric
 		errorsMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name, "cloud").Inc()
@@ -99,8 +99,7 @@ func getAwsS3ItemMap(s3Service *s3.S3, site Site) (map[string]string, error) {
 }
 
 func downloadFile(key string, site Site) {
-	//localpath := generateS3Key(site.BucketPath, site.LocalPath, key)
-	localpath := generateLocalpath(site.LocalPath, site.BucketPath, key)
+	localpath := generateLocalpath(site.LocalPath, key)
 	localDir := filepath.Dir(localpath)
 	if _, err := os.Stat(localDir); os.IsNotExist(err) {
 		if err := os.MkdirAll(localDir, os.ModePerm); err != nil {
@@ -133,7 +132,7 @@ func downloadFile(key string, site Site) {
 		if err != nil {
 			// Update errors metric
 			errorsMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name, "cloud").Inc()
-			logger.Errorf("failed to download object: %s/%s => %s, err %v", site.Bucket, key, localpath, err)
+			logger.Errorf("failed to download object: b:%s, k:%s => %s, err %v", site.Bucket, key, localpath, err)
 		} else {
 			logger.Infof("successfully downloaded object to: %s", localpath)
 		}
@@ -141,9 +140,12 @@ func downloadFile(key string, site Site) {
 }
 
 func deleteFile(s3Key string, site Site) {
-	localfile := generateLocalpath(site.LocalPath, site.BucketPath, s3Key)
-	os.Remove(localfile)
-	logger.Infof("removed s3 object: %s/%s => %s", site.Bucket, s3Key, localfile)
+	localfile := generateLocalpath(site.LocalPath, s3Key)
+	if err := os.Remove(localfile); err != nil {
+		logger.Errorf("removed local file failed: %s, b:%s, k:%s => %s", err, site.Bucket, s3Key, localfile)
+	} else {
+		logger.Infof("removed s3 object: b:%s, k:%s => %s", site.Bucket, s3Key, localfile)
+	}
 }
 
 func syncSite(site Site, downloadCh chan<- DownloadCFG, checksumCh chan<- ChecksumCFG, wg *sync.WaitGroup) {

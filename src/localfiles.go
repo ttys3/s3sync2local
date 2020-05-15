@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -32,7 +31,8 @@ func checkIfExcluded(path string, exclusions []string) bool {
 func FilePathWalkDir(site Site, awsItems map[string]string, s3Service *s3.S3, donwloadCh chan<- DownloadCFG, checksumCh chan<- ChecksumCFG) {
 	wg := &sync.WaitGroup{}
 	wgchk := &sync.WaitGroup{}
-	err := filepath.Walk(site.LocalPath, func(path string, info os.FileInfo, err error) error {
+	// only walk local_path + bucket_path
+	err := filepath.Walk(filepath.Join(site.LocalPath, site.BucketPath), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			// Update errors metric
 			errorsMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name, "local").Inc()
@@ -41,7 +41,7 @@ func FilePathWalkDir(site Site, awsItems map[string]string, s3Service *s3.S3, do
 		}
 
 		if !info.IsDir() {
-			s3Key := generateS3Key(site.BucketPath, site.LocalPath, path)
+			s3Key := generateS3Key(site.LocalPath, path)
 			// remove local not exists
 			if awsItems[s3Key] == "" {
 				if site.RetireDeleted {
@@ -60,7 +60,8 @@ func FilePathWalkDir(site Site, awsItems map[string]string, s3Service *s3.S3, do
 
 	// Check for not downloaded files
 	for key := range awsItems {
-		localPath := filepath.Join(site.LocalPath, strings.Replace(key, site.BucketPath, "", 1))
+		// Replace: strip BucketPath from key
+		localPath := generateLocalpath(site.LocalPath, key)
 		if _, err := os.Stat(localPath); os.IsNotExist(err) {
 			wg.Add(1)
 			donwloadCh <- DownloadCFG{s3Service, key, site, "download", wg}

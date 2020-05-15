@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"runtime"
@@ -19,6 +20,8 @@ import (
 )
 
 var (
+	appVer = "dev"
+
 	osExit = os.Exit
 
 	wg = &sync.WaitGroup{}
@@ -77,12 +80,20 @@ func main() {
 	var configpath string
 	var metricsPort string
 	var metricsPath string
+	var showVerOnly bool
 
 	// Read command line args
 	flag.StringVar(&configpath, "config", "config.yml", "Path to the config.yml")
 	flag.StringVar(&metricsPort, "metrics-port", "0", "Prometheus exporter port, 0 to disable the exporter")
 	flag.StringVar(&metricsPath, "metrics-path", "/metrics", "Prometheus exporter path")
+	flag.BoolVar(&showVerOnly, "v", false, "show app version")
 	flag.Parse()
+
+	fmt.Printf("s3sync2local %s\n", appVer)
+
+	if showVerOnly {
+		osExit(0)
+	}
 
 	// Read config key
 	config := readConfigFile(configpath)
@@ -197,7 +208,7 @@ func downloadWorker(ctx context.Context, downloadCh <-chan DownloadCFG, idx int)
 			// tell sender we have done job
 			cfg.wg.Done()
 		case <-ctx.Done():
-			logger.Infof("downloadWorker %d exited", idx)
+			logger.Debugf("downloadWorker %d exited", idx)
 			return
 		}
 	}
@@ -217,7 +228,7 @@ func checksumWorker(ctx context.Context, checksumCh <-chan ChecksumCFG, download
 			// tell sender we have done job
 			cfg.wg.Done()
 		case <-ctx.Done():
-			logger.Infof("checksumWorker %d exited", idx)
+			logger.Debugf("checksumWorker %d exited", idx)
 			return
 		}
 	}

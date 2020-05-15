@@ -6,6 +6,7 @@ require (
 	github.com/BurntSushi/toml v0.3.1 // indirect
 	github.com/aws/aws-sdk-go v1.30.28
 	github.com/bxcodec/faker/v3 v3.3.1
+	github.com/dustin/go-humanize v1.0.0
 	github.com/prometheus/client_golang v1.6.0
 	github.com/schollz/progressbar/v3 v3.3.3
 	github.com/sirupsen/logrus v1.6.0

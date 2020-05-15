@@ -56,6 +56,10 @@ var (
 		},
 		[]string{"local_path", "bucket", "bucket_path", "site", "scope"},
 	)
+
+	donwloadCounter = NewCounter()
+	donwloadSizeCounter = NewCounter()
+	deletedCounter = NewCounter()
 )
 
 // DownloadCFG - structure for the download queue
@@ -90,7 +94,7 @@ func main() {
 	flag.BoolVar(&showVerOnly, "v", false, "show app version")
 	flag.Parse()
 
-	fmt.Printf("s3sync2local %s\n", appVer)
+	fmt.Printf(" ==== s3sync2local %s ====\n", appVer)
 
 	if showVerOnly {
 		osExit(0)
@@ -200,8 +204,10 @@ func downloadWorker(ctx context.Context, downloadCh <-chan DownloadCFG, idx int)
 		case cfg := <-downloadCh:
 			if cfg.action == "download" {
 				downloadFile(cfg.key, cfg.site)
+				donwloadCounter.Inc()
 			} else if cfg.action == "delete" {
 				deleteFile(cfg.key, cfg.site)
+				deletedCounter.Inc()
 			} else {
 				logger.Errorf("programming error, unknown action: %s", cfg.action)
 			}

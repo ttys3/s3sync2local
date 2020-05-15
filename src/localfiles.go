@@ -51,7 +51,8 @@ func FilePathWalkDir(site Site, awsItems map[string]string, s3Service *s3.S3, do
 			} else {
 				wg.Add(1)
 				checksumRemote := awsItems[s3Key]
-				checksumCh <- ChecksumCFG{DownloadCFG{s3Service, s3Key, site, "download", wg, bar}, path, s3Key, checksumRemote, site}
+				checksumCh <- ChecksumCFG{DownloadCFG{s3Service, s3Key, site, "download", wg, bar},
+					path, s3Key, checksumRemote, site}
 			}
 		}
 		return nil

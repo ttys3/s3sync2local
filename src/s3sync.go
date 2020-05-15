@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/dustin/go-humanize"
 	"github.com/schollz/progressbar/v3"
 )
 
@@ -141,7 +142,7 @@ func downloadFile(key string, site Site) {
 			u.PartSize = 5 * 1024 * 1024
 			u.Concurrency = 5
 		})
-		_, err := downloader.Download(f, &s3.GetObjectInput{
+		n, err := downloader.Download(f, &s3.GetObjectInput{
 			Bucket:       aws.String(site.Bucket),
 			Key:          aws.String(key),
 		})
@@ -151,6 +152,7 @@ func downloadFile(key string, site Site) {
 			errorsMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name, "cloud").Inc()
 			logger.Errorf("failed to download object: b:%s, k:%s => %s, err %v", site.Bucket, key, localpath, err)
 		} else {
+			donwloadSizeCounter.Add(n)
 			logger.Debugf("successfully downloaded object to: %s", localpath)
 		}
 	}
@@ -181,7 +183,11 @@ func syncSite(site Site, downloadCh chan<- DownloadCFG, checksumCh chan<- Checks
 		// Compare S3 objects with local
 		FilePathWalkDir(site, awsItems, s3Service, downloadCh, checksumCh, bar)
 		bar.Finish()
-		logger.Infof("[%s] finished sync", site.Name)
+		logger.Infof("[%s] finished sync. downloaded files: %d, sizes: %s, deleted files: %d",
+			site.Name,
+			donwloadCounter.Count(),
+			humanize.Bytes(uint64(donwloadSizeCounter.Count())),
+		deletedCounter.Count())
 	}
 	wg.Done()
 }

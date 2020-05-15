@@ -4,6 +4,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -35,6 +36,9 @@ func getObjectSize(s3Service *s3.S3, site Site, s3Key string) int64 {
 
 func generateS3Key(bucketPath string, localPath string, filePath string) string {
 	relativePath, _ := filepath.Rel(localPath, filePath)
+	if runtime.GOOS == "windows" {
+		relativePath = strings.ReplaceAll(relativePath, "\\", "/")
+	}
 	return path.Join(bucketPath, relativePath)
 }
 

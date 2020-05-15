@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/schollz/progressbar/v3"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -64,6 +65,7 @@ type DownloadCFG struct {
 	site      Site
 	action    string
 	wg *sync.WaitGroup
+	bar *progressbar.ProgressBar
 }
 
 // ChecksumCFG - structure for the checksum comparison queue
@@ -73,7 +75,6 @@ type ChecksumCFG struct {
 	key			   string
 	checksumRemote string
 	site           Site
-	wg *sync.WaitGroup
 }
 
 func main() {
@@ -125,7 +126,7 @@ func main() {
 	ctxChk, cancelChk = context.WithCancel(ctxChk)
 
 	defer func() {
-		logger.Infof("cancel all workers")
+		logger.Infof("stopping all workers ...")
 		cancelChk()
 		cancel()
 		time.Sleep(time.Millisecond * 300)
@@ -182,7 +183,6 @@ func main() {
 			site.WatchInterval = config.WatchInterval
 		}
 
-		logger.Infof("==== starting sync for site: %s ====", site.Name)
 		wg.Add(1)
 		go syncSite(site, downloadCh, checksumCh, wg)
 	}
@@ -205,6 +205,7 @@ func downloadWorker(ctx context.Context, downloadCh <-chan DownloadCFG, idx int)
 			} else {
 				logger.Errorf("programming error, unknown action: %s", cfg.action)
 			}
+			cfg.bar.Add(1)
 			// tell sender we have done job
 			cfg.wg.Done()
 		case <-ctx.Done():
@@ -223,10 +224,9 @@ func checksumWorker(ctx context.Context, checksumCh <-chan ChecksumCFG, download
 				// Add key to the download queue
 				downloadCh <- cfg.DownloadCFG
 			} else {
+				cfg.DownloadCFG.bar.Add(1)
 				cfg.DownloadCFG.wg.Done()
 			}
-			// tell sender we have done job
-			cfg.wg.Done()
 		case <-ctx.Done():
 			logger.Debugf("checksumWorker %d exited", idx)
 			return

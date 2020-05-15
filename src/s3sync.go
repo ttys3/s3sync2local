@@ -6,12 +6,14 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/schollz/progressbar/v3"
 )
 
 func getObjectSize(s3Service *s3.S3, site Site, s3Key string) int64 {
@@ -69,9 +71,20 @@ func getAwsS3ItemMap(s3Service *s3.S3, site Site) (map[string]string, error) {
 	params := &s3.ListObjectsInput{
 		Bucket: aws.String(site.Bucket),
 		Prefix: aws.String(site.BucketPath),
+		MaxKeys: aws.Int64(1024),
 	}
 
-	logger.Infof("begin list objects")
+	logger.Infof("[%s] begin list objects ...", site.Name)
+
+	bar := progressbar.Default(1000, "list objects")
+
+	go func() {
+		for i := 0; i < 800; i++ {
+			bar.Add(1)
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+
 	err := s3Service.ListObjectsPages(params,
 		func(page *s3.ListObjectsOutput, last bool) bool {
 			// Process the objects for each page
@@ -85,10 +98,14 @@ func getAwsS3ItemMap(s3Service *s3.S3, site Site) (map[string]string, error) {
 					items[aws.StringValue(s3obj.Key)] = strings.Trim(*(s3obj.ETag), "\"")
 				}
 			}
+			bar.Add(1)
 			return true
 		},
 	)
-	logger.Infof("done list objects")
+
+	bar.Finish()
+	logger.Infof("[%s] done list objects", site.Name)
+
 	if err != nil {
 		// Update errors metric
 		errorsMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name, "cloud").Inc()
@@ -134,7 +151,7 @@ func downloadFile(key string, site Site) {
 			errorsMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name, "cloud").Inc()
 			logger.Errorf("failed to download object: b:%s, k:%s => %s, err %v", site.Bucket, key, localpath, err)
 		} else {
-			logger.Infof("successfully downloaded object to: %s", localpath)
+			logger.Debugf("successfully downloaded object to: %s", localpath)
 		}
 	}
 }
@@ -144,7 +161,7 @@ func deleteFile(s3Key string, site Site) {
 	if err := os.Remove(localfile); err != nil {
 		logger.Errorf("removed local file failed: %s, b:%s, k:%s => %s", err, site.Bucket, s3Key, localfile)
 	} else {
-		logger.Infof("removed s3 object: b:%s, k:%s => %s", site.Bucket, s3Key, localfile)
+		logger.Debugf("removed s3 object: b:%s, k:%s => %s", site.Bucket, s3Key, localfile)
 	}
 }
 
@@ -159,9 +176,12 @@ func syncSite(site Site, downloadCh chan<- DownloadCFG, checksumCh chan<- Checks
 		logger.Errorln(err)
 		osExit(4)
 	} else {
+		logger.Infof("[%s] begin sync ...", site.Name)
+		bar := progressbar.Default(int64(len(awsItems)), "sync")
 		// Compare S3 objects with local
-		FilePathWalkDir(site, awsItems, s3Service, downloadCh, checksumCh)
-		logger.Infof("==== finished sync for site: %s ====", site.Name)
+		FilePathWalkDir(site, awsItems, s3Service, downloadCh, checksumCh, bar)
+		bar.Finish()
+		logger.Infof("[%s] finished sync", site.Name)
 	}
 	wg.Done()
 }

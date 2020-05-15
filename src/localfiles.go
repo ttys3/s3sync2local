@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/schollz/progressbar/v3"
 )
 
 func checkIfExcluded(path string, exclusions []string) bool {
@@ -28,9 +29,8 @@ func checkIfExcluded(path string, exclusions []string) bool {
 
 // FilePathWalkDir walks through the directory and all subdirectories returning list of files for download (local not exists)
 // and list of files to be deleted from local (not exists from S3, but local exists)
-func FilePathWalkDir(site Site, awsItems map[string]string, s3Service *s3.S3, donwloadCh chan<- DownloadCFG, checksumCh chan<- ChecksumCFG) {
+func FilePathWalkDir(site Site, awsItems map[string]string, s3Service *s3.S3, donwloadCh chan<- DownloadCFG, checksumCh chan<- ChecksumCFG, bar *progressbar.ProgressBar) {
 	wg := &sync.WaitGroup{}
-	wgchk := &sync.WaitGroup{}
 	// only walk local_path + bucket_path
 	err := filepath.Walk(filepath.Join(site.LocalPath, site.BucketPath), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -46,13 +46,12 @@ func FilePathWalkDir(site Site, awsItems map[string]string, s3Service *s3.S3, do
 			if awsItems[s3Key] == "" {
 				if site.RetireDeleted {
 					wg.Add(1)
-					donwloadCh <- DownloadCFG{s3Service, s3Key, site, "delete", wg}
+					donwloadCh <- DownloadCFG{s3Service, s3Key, site, "delete", wg, bar}
 				}
 			} else {
 				wg.Add(1)
-				wgchk.Add(1)
 				checksumRemote := awsItems[s3Key]
-				checksumCh <- ChecksumCFG{DownloadCFG{s3Service, s3Key, site, "download", wg}, path, s3Key, checksumRemote, site, wgchk}
+				checksumCh <- ChecksumCFG{DownloadCFG{s3Service, s3Key, site, "download", wg, bar}, path, s3Key, checksumRemote, site}
 			}
 		}
 		return nil
@@ -64,7 +63,7 @@ func FilePathWalkDir(site Site, awsItems map[string]string, s3Service *s3.S3, do
 		localPath := generateLocalpath(site.LocalPath, key)
 		if _, err := os.Stat(localPath); os.IsNotExist(err) {
 			wg.Add(1)
-			donwloadCh <- DownloadCFG{s3Service, key, site, "download", wg}
+			donwloadCh <- DownloadCFG{s3Service, key, site, "download", wg, bar}
 		}
 	}
 
@@ -74,9 +73,6 @@ func FilePathWalkDir(site Site, awsItems map[string]string, s3Service *s3.S3, do
 		logger.Error(err)
 	}
 
-	logger.Debugf("begin wgchk.Wait()")
-	wgchk.Wait()
-	logger.Debugf("begin wg.Wait()")
 	wg.Wait()
 	logger.Debugf("FilePathWalkDir return")
 }

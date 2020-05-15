@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/aws/aws-sdk-go/service/s3"
 )
@@ -26,41 +27,43 @@ func checkIfExcluded(path string, exclusions []string) bool {
 	return excluded
 }
 
-// FilePathWalkDir walks through the directory and all subdirectories returning list of files for upload and list of files to be deleted from S3
-func FilePathWalkDir(site Site, awsItems map[string]string, s3Service *s3.S3, uploadCh chan<- UploadCFG, checksumCh chan<- ChecksumCFG) {
+// FilePathWalkDir walks through the directory and all subdirectories returning list of files for download (local not exists)
+// and list of files to be deleted from local (not exists from S3, but local exists)
+func FilePathWalkDir(site Site, awsItems map[string]string, s3Service *s3.S3, donwloadCh chan<- DownloadCFG, checksumCh chan<- ChecksumCFG) {
+	wg := &sync.WaitGroup{}
+	wgchk := &sync.WaitGroup{}
 	err := filepath.Walk(site.LocalPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			// Update errors metric
 			errorsMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name, "local").Inc()
 			logger.Error(err)
+			return err
 		}
 
 		if !info.IsDir() {
-			excluded := checkIfExcluded(path, site.Exclusions)
 			s3Key := generateS3Key(site.BucketPath, site.LocalPath, path)
-			if excluded {
-				logger.Debugf("skipping without errors: %+v", path)
-				// Delete the excluded object if already in the cloud
-				if awsItems[s3Key] != "" && site.RetireDeleted {
-					uploadCh <- UploadCFG{s3Service, s3Key, site, "delete"}
+			// remove local not exists
+			if awsItems[s3Key] == "" {
+				if site.RetireDeleted {
+					wg.Add(1)
+					donwloadCh <- DownloadCFG{s3Service, s3Key, site, "delete", wg}
 				}
 			} else {
-				checksumRemote, _ := awsItems[s3Key]
-				checksumCh <- ChecksumCFG{UploadCFG{s3Service, path, site, "upload"}, path, checksumRemote, site}
+				wg.Add(1)
+				wgchk.Add(1)
+				checksumRemote := awsItems[s3Key]
+				checksumCh <- ChecksumCFG{DownloadCFG{s3Service, s3Key, site, "download", wg}, path, s3Key, checksumRemote, site, wgchk}
 			}
 		}
 		return nil
 	})
 
-	// Check for deleted files
-	if site.RetireDeleted {
-		for key := range awsItems {
-			// Generate localPath by removing BucketPath from the key value and addint LocalPath
-			localPath := filepath.Join(site.LocalPath, strings.Replace(key, site.BucketPath, "", 1))
-			// Send s3 key for deleteion if generated localPath does not exist
-			if _, err := os.Stat(localPath); os.IsNotExist(err) {
-				uploadCh <- UploadCFG{s3Service, key, site, "delete"}
-			}
+	// Check for not downloaded files
+	for key := range awsItems {
+		localPath := filepath.Join(site.LocalPath, strings.Replace(key, site.BucketPath, "", 1))
+		if _, err := os.Stat(localPath); os.IsNotExist(err) {
+			wg.Add(1)
+			donwloadCh <- DownloadCFG{s3Service, key, site, "download", wg}
 		}
 	}
 
@@ -70,7 +73,11 @@ func FilePathWalkDir(site Site, awsItems map[string]string, s3Service *s3.S3, up
 		logger.Error(err)
 	}
 
-	return
+	logger.Debugf("begin wgchk.Wait()")
+	wgchk.Wait()
+	logger.Debugf("begin wg.Wait()")
+	wg.Wait()
+	logger.Debugf("FilePathWalkDir return")
 }
 
 func compareChecksum(filename string, checksumRemote string, site Site) string {
@@ -81,7 +88,7 @@ func compareChecksum(filename string, checksumRemote string, site Site) string {
 
 	logger.Debugf("%s: comparing checksums", filename)
 
-	if checksumRemote == "" {
+	if filename == "" {
 		return filename
 	}
 
@@ -90,7 +97,7 @@ func compareChecksum(filename string, checksumRemote string, site Site) string {
 		// Update errors metric
 		errorsMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name, "local").Inc()
 		logger.Error(err)
-		return ""
+		return filename
 	}
 	defer file.Close()
 

@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/bxcodec/faker"
+	"github.com/bxcodec/faker/v3"
 )
 
 type generateS3KeyTest struct {
@@ -51,8 +51,8 @@ func TestGetS3Session(t *testing.T) {
 
 func TestGenerateS3Key(t *testing.T) {
 	var generateS3KeyTestData = []generateS3KeyTest{
-		{"", "./", "./test_data/test.file", "test_data/test.file"},
-		{"foo", "./", "./test_data/test.file", "foo/test_data/test.file"},
+		{"", "./", "./test_data/test.key", "test_data/test.key"},
+		{"foo", "./", "./test_data/test.key", "foo/test_data/test.key"},
 	}
 
 	for _, testSet := range generateS3KeyTestData {

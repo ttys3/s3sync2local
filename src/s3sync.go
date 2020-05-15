@@ -5,9 +5,9 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -38,9 +38,15 @@ func generateS3Key(bucketPath string, localPath string, filePath string) string 
 	return path.Join(bucketPath, relativePath)
 }
 
+func generateLocalpath(localPath string, bucketPath string, key string) string {
+	//filepath.Join(site.LocalPath, site.BucketPath, key)
+	return filepath.Join(localPath, bucketPath, key)
+}
+
 func getS3Session(site Site) *session.Session {
 	config := aws.Config{
 		Region:     aws.String(site.BucketRegion),
+		Endpoint:   aws.String(site.Endpoint),
 		MaxRetries: aws.Int(-1),
 	}
 
@@ -68,8 +74,7 @@ func getAwsS3ItemMap(s3Service *s3.S3, site Site) (map[string]string, error) {
 			// Process the objects for each page
 			for _, s3obj := range page.Contents {
 				if aws.StringValue(s3obj.StorageClass) != site.StorageClass {
-					logger.Infof("storage class does not match, marking for re-upload: %s", aws.StringValue(s3obj.Key))
-					items[aws.StringValue(s3obj.Key)] = "none"
+					logger.Warnf("storage class does not match, marking for not download: %s", aws.StringValue(s3obj.Key))
 				} else {
 					// Update metrics
 					sizeMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name).Add(float64(*s3obj.Size))
@@ -89,94 +94,59 @@ func getAwsS3ItemMap(s3Service *s3.S3, site Site) (map[string]string, error) {
 	return items, nil
 }
 
-func uploadFile(s3Service *s3.S3, file string, site Site) {
-	s3Key := generateS3Key(site.BucketPath, site.LocalPath, file)
-	uploader := s3manager.NewUploader(getS3Session(site), func(u *s3manager.Uploader) {
-		u.PartSize = 5 * 1024 * 1024
-		u.Concurrency = 5
-	})
-
-	f, fileErr := os.Open(file)
+func downloadFile(key string, site Site) {
+	//localpath := generateS3Key(site.BucketPath, site.LocalPath, key)
+	localpath := generateLocalpath(site.LocalPath, site.BucketPath, key)
+	localDir := filepath.Dir(localpath)
+	if _, err := os.Stat(localDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(localDir, os.ModePerm); err != nil {
+			errorsMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name, "local").Inc()
+			logger.Errorf("failed to create dir %q, %v", localDir, err)
+			return
+		}
+	}
+	// local key to save
+	f, fileErr := os.Create(localpath)
 
 	// Try to get object size in case we updating already existing
-	objSize := getObjectSize(s3Service, site, s3Key)
+	//objSize := getObjectSize(s3Service, site, localpath)
 
 	if fileErr != nil {
 		// Update errors metric
 		errorsMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name, "local").Inc()
-		logger.Errorf("failed to open file %q, %v", file, fileErr)
+		logger.Errorf("failed to create file %q, %v", localpath, fileErr)
 	} else {
-		_, err := uploader.Upload(&s3manager.UploadInput{
+		defer f.Close()
+		downloader := s3manager.NewDownloader(getS3Session(site), func(u *s3manager.Downloader) {
+			u.PartSize = 5 * 1024 * 1024
+			u.Concurrency = 5
+		})
+		_, err := downloader.Download(f, &s3.GetObjectInput{
 			Bucket:       aws.String(site.Bucket),
-			Key:          aws.String(s3Key),
-			Body:         f,
-			StorageClass: aws.String(site.StorageClass),
+			Key:          aws.String(key),
 		})
 
 		if err != nil {
 			// Update errors metric
 			errorsMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name, "cloud").Inc()
-			logger.Errorf("failed to upload object, %v", err)
+			logger.Errorf("failed to download object: %s/%s => %s, err %v", site.Bucket, key, localpath, err)
 		} else {
-			// Get file size
-			fs, _ := f.Stat()
-			fileSize := fs.Size()
-			// Update metrics
-			sizeMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name).Add(float64(fileSize))
-			if objSize > 0 {
-				// Substitute old file size
-				sizeMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name).Sub(float64(objSize))
-			} else {
-				// Only upodate object counter when it's a new object
-				objectsMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name).Inc()
-			}
-			logger.Infof("successfully uploaded file: %s/%s", site.Bucket, s3Key)
+			logger.Infof("successfully downloaded object to: %s", localpath)
 		}
 	}
-	defer f.Close()
 }
 
-func deleteFile(s3Service *s3.S3, s3Key string, site Site) {
-	// Get object size
-	objSize := getObjectSize(s3Service, site, s3Key)
-
-	input := &s3.DeleteObjectInput{
-		Bucket: aws.String(site.Bucket),
-		Key:    aws.String(s3Key),
-	}
-
-	// Delete the object
-	_, err := s3Service.DeleteObject(input)
-	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			default:
-				// Update errors metric
-				errorsMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name, "cloud").Inc()
-				logger.Errorln(aerr.Error())
-			}
-		} else {
-			// Update errors metric
-			errorsMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name, "cloud").Inc()
-			logger.Errorln(err.Error())
-		}
-		return
-	}
-
-	// Update metrics
-	if objSize > 0 {
-		sizeMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name).Sub(float64(objSize))
-		objectsMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name).Dec()
-	}
-
-	logger.Infof("removed s3 object: %s/%s", site.Bucket, s3Key)
+func deleteFile(s3Key string, site Site) {
+	localfile := generateLocalpath(site.LocalPath, site.BucketPath, s3Key)
+	os.Remove(localfile)
+	logger.Infof("removed s3 object: %s/%s => %s", site.Bucket, s3Key, localfile)
 }
 
-func syncSite(site Site, uploadCh chan<- UploadCFG, checksumCh chan<- ChecksumCFG) {
+func syncSite(site Site, downloadCh chan<- DownloadCFG, checksumCh chan<- ChecksumCFG, wg *sync.WaitGroup) {
 	// Initi S3 session
 	s3Service := s3.New(getS3Session(site))
 	// Watch directory for realtime sync
-	go watch(s3Service, site, uploadCh)
+	//go watch(s3Service, site, downloadCh)
 	// Fetch S3 objects
 	awsItems, err := getAwsS3ItemMap(s3Service, site)
 	if err != nil {
@@ -184,7 +154,8 @@ func syncSite(site Site, uploadCh chan<- UploadCFG, checksumCh chan<- ChecksumCF
 		osExit(4)
 	} else {
 		// Compare S3 objects with local
-		FilePathWalkDir(site, awsItems, s3Service, uploadCh, checksumCh)
-		logger.Infof("finished initial sync for site %s", site.Name)
+		FilePathWalkDir(site, awsItems, s3Service, downloadCh, checksumCh)
+		logger.Infof("==== finished sync for site: %s ====", site.Name)
 	}
+	wg.Done()
 }

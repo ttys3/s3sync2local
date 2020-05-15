@@ -1,0 +1,14 @@
+access_key: "the key"
+secret_access_key: "the secret"
+download_workers: 8
+download_queue_buffer: 0
+checksum_workers: 8
+endpoint: "s3.us-west-1.amazonaws.com"
+loglevel: "info"
+aws_region: "us-west-1"
+sites:
+- local_path: /tmp/wstest
+  bucket: wstest
+  retire_deleted: true
+  exclusions:
+    - .[Dd][Ss]_[Ss]tore

@@ -1,4 +1,4 @@
-upload_workers: 2
+download_workers: 2
 checksum_workers: 2
 loglevel: trace
 sites:

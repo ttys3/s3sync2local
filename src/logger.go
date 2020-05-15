@@ -32,7 +32,7 @@ func initLogger(config *Config) {
 	}
 
 	if LogLevel, ok := logLevels[config.LogLevel]; ok {
-		logger.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
+		logger.SetFormatter(&logrus.TextFormatter{FullTimestamp: true, ForceColors: true})
 		logger.SetOutput(os.Stdout)
 
 		logger.SetLevel(LogLevel)

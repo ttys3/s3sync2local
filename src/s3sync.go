@@ -69,7 +69,7 @@ func getS3Service(site Site) *s3.S3 {
 func getAwsS3ItemMap(s3Service *s3.S3, site Site) (map[string]string, error) {
 	var items = make(map[string]string)
 
-	perpage := int64(1024)
+	perpage := int64(1000)
 	params := &s3.ListObjectsV2Input{
 		Bucket: aws.String(site.Bucket),
 		Prefix: aws.String(site.BucketPath),
@@ -78,10 +78,12 @@ func getAwsS3ItemMap(s3Service *s3.S3, site Site) (map[string]string, error) {
 
 	logger.Infof("[%s] begin list objects ...", site.Name)
 
-	bar := progressbar.Default(5000, fmt.Sprintf("list objects [%d/page] ...", perpage))
+	bar := progressbar.Default(100, fmt.Sprintf("list objects [%d/page] ...", perpage))
 
+	npage := 0
 	err := s3Service.ListObjectsV2Pages(params,
 		func(page *s3.ListObjectsV2Output, last bool) bool {
+			logger.Debugf("get page objects: %d", len(page.Contents))
 			// Process the objects for each page
 			for _, s3obj := range page.Contents {
 				if aws.StringValue(s3obj.StorageClass) != site.StorageClass {
@@ -92,6 +94,10 @@ func getAwsS3ItemMap(s3Service *s3.S3, site Site) (map[string]string, error) {
 					objectsMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name).Inc()
 					items[aws.StringValue(s3obj.Key)] = strings.Trim(*(s3obj.ETag), "\"")
 				}
+			}
+			npage++
+			if npage > bar.GetMax()-1 {
+				bar.ChangeMax64(bar.GetMax64()+100)
 			}
 			bar.Add(1)
 			return true

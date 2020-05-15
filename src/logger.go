@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/sirupsen/logrus"
+	"github.com/snowzach/rotatefilehook"
 )
 
 var logger = logrus.New()
@@ -31,16 +32,28 @@ func initLogger(config *Config) {
 		config.LogLevel = "info"
 	}
 
-	if LogLevel, ok := logLevels[config.LogLevel]; ok {
+	if LogLevel, ok := logLevels[config.LogLevel]; !ok {
+		LoggerInitError(fmt.Errorf("log level definition not found for '%s'", config.LogLevel))
+	} else {
 		logger.SetFormatter(&logrus.TextFormatter{FullTimestamp: true, ForceColors: true})
 		logger.SetOutput(os.Stdout)
-
 		logger.SetLevel(LogLevel)
 
 		if config.LogLevel == "trace" || config.LogLevel == "debug" {
 			logger.SetReportCaller(true)
 		}
-	} else {
-		LoggerInitError(fmt.Errorf("Log level definition not found for '%s'", config.LogLevel))
+
+		rotateFileHook, err := rotatefilehook.NewRotateFileHook(rotatefilehook.RotateFileConfig{
+			Filename: "s3-sync.log",
+			MaxSize: 5, // the maximum size in megabytes
+			MaxBackups: 7, // the maximum number of old log files to retain
+			MaxAge: 7, // the maximum number of days to retain old log files
+			Level: logrus.DebugLevel,
+			Formatter: &logrus.TextFormatter{FullTimestamp: true},
+		})
+		if err != nil {
+			panic(err)
+		}
+		logger.AddHook(rotateFileHook)
 	}
 }

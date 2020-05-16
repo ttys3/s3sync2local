@@ -36,8 +36,12 @@ func FilePathWalkDir(site Site, awsItems map[string]string, s3Service *s3.S3, do
 		if err != nil {
 			// Update errors metric
 			errorsMetric.WithLabelValues(site.LocalPath, site.Bucket, site.BucketPath, site.Name, "local").Inc()
-			logger.Error(err)
-			return err
+			if os.IsNotExist(err) {
+				// skip this dir if it does not exists
+				return filepath.SkipDir
+			} else {
+				return err
+			}
 		}
 
 		if !info.IsDir() {

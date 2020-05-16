@@ -44,6 +44,10 @@ zmazay/s3sync2local \
 
 ## Configuration
 
+The `bucket_path` now support template vars.
+It will pick yesterday's date so it will be very convenient to run a daily cron job.
+you can set it like `images/{{.Year}}/{{.Month}}/{{.Day}}`
+
 Example configuration:
 
 ```yaml

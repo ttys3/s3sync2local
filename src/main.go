@@ -223,15 +223,15 @@ func parseBucketPath(bucketPath string) (string, error) {
 	}
 	t := template.Must(template.New("bucket_path").Parse(bucketPath))
 	buf := bytes.NewBufferString("")
-	now := time.Now()
+	yesterday := time.Now().Add(-24*time.Hour)
 	if err := t.Execute(buf, struct {
 		Year  string
 		Month string
-		Day   string
+		Day string
 	}{
-		fmt.Sprintf("%02d", now.Year()),
-		fmt.Sprintf("%02d", now.Month()),
-		fmt.Sprintf("%02d", now.Day()),
+		fmt.Sprintf("%02d", yesterday.Year()),
+		fmt.Sprintf("%02d", yesterday.Month()),
+		fmt.Sprintf("%02d", yesterday.Day()),
 	}); err != nil {
 		return "", fmt.Errorf("invalid bucket_path")
 	}

@@ -64,8 +64,10 @@ var (
 		[]string{"local_path", "bucket", "bucket_path", "site", "scope"},
 	)
 
+	donwloadWantCounter = NewCounter()
 	donwloadCounter = NewCounter()
 	donwloadSizeCounter = NewCounter()
+	deleteWantCounter = NewCounter()
 	deletedCounter = NewCounter()
 )
 

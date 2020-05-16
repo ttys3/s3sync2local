@@ -118,6 +118,7 @@ func getAwsS3ItemMap(ctx context.Context, s3Service *s3.S3, site Site) (map[stri
 }
 
 func downloadFile(key string, site Site) {
+	donwloadWantCounter.Inc()
 	localpath := generateLocalpath(site.LocalPath, key)
 	localDir := filepath.Dir(localpath)
 	if _, err := os.Stat(localDir); os.IsNotExist(err) {
@@ -161,6 +162,7 @@ func downloadFile(key string, site Site) {
 }
 
 func deleteFile(s3Key string, site Site) {
+	deleteWantCounter.Inc()
 	localfile := generateLocalpath(site.LocalPath, s3Key)
 	if err := os.Remove(localfile); err != nil {
 		logger.Errorf("removed local file failed: %s, b:%s, k:%s => %s", err, site.Bucket, s3Key, localfile)
@@ -186,11 +188,11 @@ func syncSite(ctx context.Context, site Site, downloadCh chan<- DownloadCFG, che
 		FilePathWalkDir(site, awsItems, s3Service, downloadCh, checksumCh, bar)
 		bar.Finish()
 		logger.Infof("[%s] finished sync", site.Name)
-		logger.Infof("[%s] sync stats: \n\t\t\t\tdownloaded local files: %d, downloaded total size: %s, deleted local files: %d",
+		logger.Infof("[%s] sync stats: \n\t\t\t\tdownloaded local files: %d/%d, downloaded total size: %s, deleted local files: %d/%d",
 			site.Name,
-			donwloadCounter.Count(),
+			donwloadCounter.Count(),donwloadWantCounter.Count(),
 			humanize.Bytes(uint64(donwloadSizeCounter.Count())),
-			deletedCounter.Count())
+			deletedCounter.Count(), deleteWantCounter.Count())
 	}
 	wg.Done()
 }

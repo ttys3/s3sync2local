@@ -185,11 +185,12 @@ func syncSite(ctx context.Context, site Site, downloadCh chan<- DownloadCFG, che
 		// Compare S3 objects with local
 		FilePathWalkDir(site, awsItems, s3Service, downloadCh, checksumCh, bar)
 		bar.Finish()
-		logger.Infof("[%s] finished sync. downloaded local files: %d, downloaded total size: %s, deleted local files: %d",
+		logger.Infof("[%s] finished sync", site.Name)
+		logger.Infof("[%s] sync stats: \n\t\t\t\tdownloaded local files: %d, downloaded total size: %s, deleted local files: %d",
 			site.Name,
 			donwloadCounter.Count(),
 			humanize.Bytes(uint64(donwloadSizeCounter.Count())),
-		deletedCounter.Count())
+			deletedCounter.Count())
 	}
 	wg.Done()
 }

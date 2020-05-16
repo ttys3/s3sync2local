@@ -84,7 +84,7 @@ func compareChecksum(filename string, checksumRemote string, site Site) string {
 	var finalSum []byte
 	chunkSize := int64(5 * 1024 * 1024)
 
-	logger.Debugf("%s: comparing checksums", filename)
+	logger.Tracef("%s: comparing checksums", filename)
 
 	if filename == "" {
 		return filename
@@ -147,7 +147,7 @@ func compareChecksum(filename string, checksumRemote string, site Site) string {
 		logger.Debugf("%s: checksums do not match, local checksum is %s, remote - %s", filename, sumHex, checksumRemote)
 		return filename
 	}
-	logger.Debugf("%s: checksums matched", filename)
+	logger.Tracef("%s: checksums matched", filename)
 	return ""
 }
 

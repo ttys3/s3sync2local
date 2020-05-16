@@ -257,7 +257,7 @@ func downloadWorker(ctx context.Context, downloadCh <-chan DownloadCFG, idx int)
 			// tell sender we have done job
 			cfg.wg.Done()
 		case <-ctx.Done():
-			logger.Debugf("downloadWorker %d exited", idx)
+			logger.Tracef("downloadWorker %d exited", idx)
 			return
 		}
 	}
@@ -276,7 +276,7 @@ func checksumWorker(ctx context.Context, checksumCh <-chan ChecksumCFG, download
 				cfg.DownloadCFG.wg.Done()
 			}
 		case <-ctx.Done():
-			logger.Debugf("checksumWorker %d exited", idx)
+			logger.Tracef("checksumWorker %d exited", idx)
 			return
 		}
 	}

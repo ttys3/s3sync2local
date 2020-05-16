@@ -82,7 +82,6 @@ func compareChecksum(filename string, checksumRemote string, site Site) string {
 	var sumOfSums []byte
 	var parts int
 	var finalSum []byte
-	chunkSize := int64(5 * 1024 * 1024)
 
 	logger.Tracef("%s: comparing checksums", filename)
 
@@ -106,6 +105,16 @@ func compareChecksum(filename string, checksumRemote string, site Site) string {
 		logger.Error(err)
 		return ""
 	}
+
+	// chunkSize should only used when the uploader has PartSize set like
+	//uploader := s3manager.NewUploader(getS3Session(site), func(u *s3manager.Uploader) {
+	//	u.PartSize = 5 * 1024 * 1024
+	//	u.Concurrency = 5
+	//})
+	// we have not used PartSize in upload, so
+	//chunkSize := int64(5 * 1024 * 1024)
+
+	chunkSize := dataSize
 
 	for start := int64(0); start < dataSize; start += chunkSize {
 		length := chunkSize

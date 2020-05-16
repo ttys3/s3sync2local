@@ -251,10 +251,8 @@ func downloadWorker(ctx context.Context, downloadCh <-chan DownloadCFG, idx int)
 		case cfg := <-downloadCh:
 			if cfg.action == "download" {
 				downloadFile(cfg.key, cfg.site)
-				donwloadCounter.Inc()
 			} else if cfg.action == "delete" {
 				deleteFile(cfg.key, cfg.site)
-				deletedCounter.Inc()
 			} else {
 				logger.Errorf("programming error, unknown action: %s", cfg.action)
 			}

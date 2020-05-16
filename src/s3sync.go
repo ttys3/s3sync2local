@@ -154,6 +154,7 @@ func downloadFile(key string, site Site) {
 			logger.Errorf("failed to download object: b:%s, k:%s => %s, err %v", site.Bucket, key, localpath, err)
 		} else {
 			donwloadSizeCounter.Add(uint64(n))
+			donwloadCounter.Inc()
 			logger.Debugf("successfully downloaded object to: %s", localpath)
 		}
 	}
@@ -164,6 +165,7 @@ func deleteFile(s3Key string, site Site) {
 	if err := os.Remove(localfile); err != nil {
 		logger.Errorf("removed local file failed: %s, b:%s, k:%s => %s", err, site.Bucket, s3Key, localfile)
 	} else {
+		deletedCounter.Inc()
 		logger.Debugf("removed s3 object: b:%s, k:%s => %s", site.Bucket, s3Key, localfile)
 	}
 }

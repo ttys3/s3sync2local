@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -66,7 +67,7 @@ func getS3Service(site Site) *s3.S3 {
 	return s3.New(getS3Session(site))
 }
 
-func getAwsS3ItemMap(s3Service *s3.S3, site Site) (map[string]string, error) {
+func getAwsS3ItemMap(ctx context.Context, s3Service *s3.S3, site Site) (map[string]string, error) {
 	var items = make(map[string]string)
 
 	perpage := int64(1000)
@@ -81,7 +82,7 @@ func getAwsS3ItemMap(s3Service *s3.S3, site Site) (map[string]string, error) {
 	bar := progressbar.Default(100, fmt.Sprintf("list objects [%d/page] ...", perpage))
 
 	npage := 0
-	err := s3Service.ListObjectsV2Pages(params,
+	err := s3Service.ListObjectsV2PagesWithContext(ctx, params,
 		func(page *s3.ListObjectsV2Output, last bool) bool {
 			logger.Debugf("get page objects: %d", len(page.Contents))
 			// Process the objects for each page
@@ -167,16 +168,15 @@ func deleteFile(s3Key string, site Site) {
 	}
 }
 
-func syncSite(site Site, downloadCh chan<- DownloadCFG, checksumCh chan<- ChecksumCFG, wg *sync.WaitGroup) {
+func syncSite(ctx context.Context, site Site, downloadCh chan<- DownloadCFG, checksumCh chan<- ChecksumCFG, wg *sync.WaitGroup) {
 	// Initi S3 session
 	s3Service := s3.New(getS3Session(site))
 	// Watch directory for realtime sync
 	//go watch(s3Service, site, downloadCh)
 	// Fetch S3 objects
-	awsItems, err := getAwsS3ItemMap(s3Service, site)
+	awsItems, err := getAwsS3ItemMap(ctx, s3Service, site)
 	if err != nil {
 		logger.Errorln(err)
-		osExit(4)
 	} else {
 		logger.Infof("[%s] begin sync ...", site.Name)
 		bar := progressbar.Default(int64(len(awsItems)), "sync...")

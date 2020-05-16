@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -24,6 +26,9 @@ var (
 	appVer = "dev"
 
 	osExit = os.Exit
+
+	hasShutdown = false
+	hasShutdownLock = sync.RWMutex{}
 
 	wg = &sync.WaitGroup{}
 
@@ -129,13 +134,21 @@ func main() {
 	ctxChk := context.Background()
 	ctxChk, cancelChk = context.WithCancel(ctxChk)
 
+	var canelSite context.CancelFunc
+	ctxSite := context.Background()
+	ctxSite, canelSite = context.WithCancel(ctxSite)
+
+	exitCh := make(chan struct{})
 	defer func() {
-		logger.Infof("stopping all workers ...")
-		cancelChk()
-		cancel()
-		time.Sleep(time.Millisecond * 300)
-		logger.Infof("all done")
+		logger.Debugf("defer called")
+		shutdown(canelSite, cancelChk, cancel)
+		exitCh <- struct{}{}
 	}()
+
+	setupSigTermHandler(func() {
+		logger.Debugf("sig handler called")
+		shutdown(canelSite, cancelChk, cancel)
+	}, exitCh)
 
 	downloadCh := make(chan DownloadCFG, config.DownloadQueueBuffer)
 	logger.Infof("starting %s download workers", strconv.Itoa(config.DownloadWorkers))
@@ -188,9 +201,11 @@ func main() {
 		}
 
 		wg.Add(1)
-		go syncSite(site, downloadCh, checksumCh, wg)
+		go syncSite(ctxSite, site, downloadCh, checksumCh, wg)
 	}
 	wg.Wait()
+	<- exitCh
+	//fmt.Println("now app real die")
 }
 
 func prometheusExporter(metricsPort string, metricsPath string) {
@@ -238,4 +253,44 @@ func checksumWorker(ctx context.Context, checksumCh <-chan ChecksumCFG, download
 			return
 		}
 	}
+}
+
+func setupSigTermHandler(handler func(), exitCh chan struct{}) {
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		logger.Infof("\n- Ctrl+C pressed in terminal, stopping ...")
+		handler()
+		// no need to time.Sleep here, because the main goroutine may have returned at this time
+		logger.Infof("\n- stopped")
+		exitCh <- struct{}{}
+		os.Exit(0)
+	}()
+}
+
+func shutdown(handlers... func()) {
+	// because in our condition, when syncSite() go routine exited, main goroutine has enough time to return, thus the defer will also be called
+	// add lock to prevent duplicate call to shutdown() in both defer and setupSigTermHandler()
+	hasShutdownLock.RLock()
+	if hasShutdown {
+		hasShutdownLock.RUnlock()
+		logger.Debugf("shutdown() already been called, just return")
+		return
+	} else {
+		hasShutdownLock.RUnlock()
+	}
+	// lock and block the call to shutdown() until the job is done
+	hasShutdownLock.Lock()
+
+	logger.Infof("shutdown: stopping all background jobs ...")
+	for _, hanlder := range handlers {
+		hanlder()
+	}
+	// wait goroutine receiving the msg, and in this waiting time,
+	// warn: the main goroutine may have returned, so we use a exitCh in setupSigTermHandler and defer
+	time.Sleep(time.Millisecond * 300)
+	logger.Infof("shutdown: all done")
+	hasShutdown = true
+	hasShutdownLock.Unlock()
 }

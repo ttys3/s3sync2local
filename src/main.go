@@ -140,17 +140,15 @@ func main() {
 	ctxSite := context.Background()
 	ctxSite, canelSite = context.WithCancel(ctxSite)
 
-	exitCh := make(chan struct{})
 	defer func() {
 		logger.Debugf("defer called")
 		shutdown(canelSite, cancelChk, cancel)
-		exitCh <- struct{}{}
 	}()
 
 	setupSigTermHandler(func() {
 		logger.Debugf("sig handler called")
 		shutdown(canelSite, cancelChk, cancel)
-	}, exitCh)
+	})
 
 	downloadCh := make(chan DownloadCFG, config.DownloadQueueBuffer)
 	logger.Infof("starting %s download workers", strconv.Itoa(config.DownloadWorkers))
@@ -215,7 +213,6 @@ func main() {
 		go syncSite(ctxSite, site, downloadCh, checksumCh, wg)
 	}
 	wg.Wait()
-	<- exitCh
 	//fmt.Println("now app real die")
 }
 
@@ -285,7 +282,7 @@ func checksumWorker(ctx context.Context, checksumCh <-chan ChecksumCFG, download
 	}
 }
 
-func setupSigTermHandler(handler func(), exitCh chan struct{}) {
+func setupSigTermHandler(handler func()) {
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -293,8 +290,8 @@ func setupSigTermHandler(handler func(), exitCh chan struct{}) {
 		logger.Infof("\n- Ctrl+C pressed in terminal, stopping ...")
 		handler()
 		// no need to time.Sleep here, because the main goroutine may have returned at this time
+		// this info may not have been printed
 		logger.Infof("\n- stopped")
-		exitCh <- struct{}{}
 		os.Exit(0)
 	}()
 }
@@ -318,7 +315,7 @@ func shutdown(handlers... func()) {
 		hanlder()
 	}
 	// wait goroutine receiving the msg, and in this waiting time,
-	// warn: the main goroutine may have returned, so we use a exitCh in setupSigTermHandler and defer
+	// warn: the main goroutine may have returned, so we use a exitCh in setupSigTermHandler
 	time.Sleep(time.Millisecond * 300)
 	logger.Infof("shutdown: all done")
 	hasShutdown = true

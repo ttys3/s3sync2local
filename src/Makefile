@@ -1,6 +1,7 @@
-DATE_VERSION := $(shell date +%Y%m%d-%H%M)
+DATE_VERSION := $(shell date +%Y%m%d)
+GIT_TAG := $(shell git describe --tags $(shell git rev-list --tags --max-count=1))
 GIT_VERSION := $(shell git rev-parse --short HEAD)
-GIT_DATE_VERSION := $(GIT_VERSION)-$(DATE_VERSION)
+GIT_DATE_VERSION := $(GIT_TAG)-$(GIT_VERSION)-$(DATE_VERSION)
 TARGET_EXEC := s3sync2local
 
 debug:

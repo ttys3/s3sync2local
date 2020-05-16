@@ -101,7 +101,8 @@ func main() {
 	flag.BoolVar(&showVerOnly, "v", false, "show app version")
 	flag.Parse()
 
-	fmt.Printf(" ==== s3sync2local %s ====\n", appVer)
+	fmt.Printf("\t==== s3sync2local %s ====\n", appVer)
+	fmt.Printf("\t====     荒野無燈 https://ttys3.net       ====\n")
 
 	if showVerOnly {
 		osExit(0)

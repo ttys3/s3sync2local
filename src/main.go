@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"text/template"
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -169,8 +171,17 @@ func main() {
 
 	// Start separate thread for each site
 	for _, site := range config.Sites {
+
 		// Remove leading slash from the BucketPath
 		site.BucketPath = strings.TrimLeft(site.BucketPath, "/")
+
+		if bucketPath, err := parseBucketPath(site.BucketPath); err != nil {
+			logger.Fatal(err)
+		} else {
+			site.BucketPath = bucketPath
+			logger.Infof("parsed bucket_path: %s", site.BucketPath)
+		}
+
 		// Set site name
 		if site.Name == "" {
 			site.Name = site.Bucket + "/" + site.BucketPath
@@ -206,6 +217,27 @@ func main() {
 	wg.Wait()
 	<- exitCh
 	//fmt.Println("now app real die")
+}
+
+func parseBucketPath(bucketPath string) (string, error) {
+	if !strings.Contains(bucketPath, "{{") {
+		return bucketPath, nil
+	}
+	t := template.Must(template.New("bucket_path").Parse(bucketPath))
+	buf := bytes.NewBufferString("")
+	now := time.Now()
+	if err := t.Execute(buf, struct {
+		Year  string
+		Month string
+		Day   string
+	}{
+		fmt.Sprintf("%02d", now.Year()),
+		fmt.Sprintf("%02d", now.Month()),
+		fmt.Sprintf("%02d", now.Day()),
+	}); err != nil {
+		return "", fmt.Errorf("invalid bucket_path")
+	}
+	return buf.String(), nil
 }
 
 func prometheusExporter(metricsPort string, metricsPath string) {
